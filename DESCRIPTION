@@ -1,0 +1,9 @@
+Package: dwchelpeR
+Type: Package
+Title: Modify your dataset to Darwin Core standard 
+Version: 0.1.0
+Author: Jason Mai <trashmai@gmail.com> & Cheng-Tao Lin <mutolisp@gmail.com>
+Maintainer: Cheng-Tao Lin <mutolisp@gmail.com>
+Description: dwchelpeR can help you to organize your dataset for Darwin Core
+License: MIT License
+LazyData: TRUE
