@@ -7,3 +7,9 @@ Maintainer: Cheng-Tao Lin <mutolisp@gmail.com>
 Description: dwchelpeR can help you to organize your dataset for Darwin Core
 License: MIT License
 LazyData: TRUE
+Imports: dplyr,
+    data.table,
+    uuid,
+    digest,
+    httr,
+    xml2
