@@ -1,30 +1,78 @@
-library(data.table)
-library(dplyr)
-library(uuid)
-library(digest)
-library(httr)
-library(xml2)
+require(data.table)
+require(dplyr)
+require(uuid)
+require(digest)
+require(httr)
+require(xml2)
 
-loadDwCTerms = function () {
-  dwcEventPage = GET("http://tools.gbif.org/dwca-validator/extension.do?id=dwc:Event")
+
+getDwcExtensions = function(url="http://tools.gbif.org/dwca-validator/extensions.do"){
+    dwcExtUrl = httr::GET(url)
+    xpath = '//div[@class="definition"]//div[@class="title"]//div[@class="head"]//a'
+    x = xml2::xml_find_all(xml2::read_html(dwcExtUrl), xpath)
+    # get Darwin Core Extensions and their attributes: extension name and url
+    dwc_attr = xml_attr(x, 'href')
+    dwc_text = xml_text(x)
+    dwcExtensionList = setNames(as.list(dwc_attr), dwc_text)
+    return(dwcExtensionList)
+    # save data image DwcExtList
+    # save(DwcExtList, 'data/DwcExtList.RData')
+}
+
+getHtmlAttr = function(url, xpath) {
+    # getHtmlAttr(url, xpath)
+    # url: a valid url
+    # xpath: what you want to get, for example:
+    #        //div[@class="definition]
+    htmlPage = httr::GET(url)
+    HtmlAttr = xml2::xml_find_all(xml2::read_html(htmlPage), xpath)
+    return(HtmlAttr)
+}
+
+getDwcTerms = function(dwc_type){
+    # we will use gbif darwin core archive validator to get darwin
+    # core extention terms
+    data(DwcExtList)
+    dwcExtUrl = DwcExtList[dwc_type]
+    dwcUrlBase = "http://tools.gbif.org/dwca-validator" 
+    dwcURL = paste(dwcUrlBase, dwcExtUrl, sep='/')
+    xpath = '//div[@class="definition"]//div[@class="title"]//div[@class="head"]' 
+    # textize the result of DwC results
+    # note: we removed break new lines, tab and space
+    dwcTextize = gsub('\n|\t| ', '', xml2::xml_text(getHtmlAttr(dwcURL, xpath)))
+    return(dwcTextize)   
+}
+
+
+loadDwCTerms = function(dwc_type) {
+   # dwc_type: Event, 
+   #
+   dwcUrlBase = "http://tools.gbif.org/dwca-validator"
+   dwcURL = paste(dwcUrlBase, dwc_type, sep=':')
+   xpath = '//div[@class="definition"]//div[@class="title"]//div[@class="head"]' 
+   # textize the result of DwC results
+   dwcTextize = xml2::xml_text(getHtmlAttr(dwcURL, xpath))
+
+
+  dwcEventPage = httr::GET("http://tools.gbif.org/dwca-validator/extension.do?id=dwc:Event")
   assign(
     'dwcEventTerms',
-    gsub('\n|\t| ', '', xml_text(xml_find_all(x=read_html(dwcEventPage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
-    envir = parent.env(environment())
+    gsub('\n|\t| ', '', xml2::xml_text(xml2::xml_find_all(x=xml2::read_html(dwcEventPage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
+    envir = .GlobalEnv
   )
-  
-  dwcMeasurementOrFactPage = GET("http://tools.gbif.org/dwca-validator/extension.do?id=http://rs.iobis.org/obis/terms/ExtendedMeasurementOrFact")
+
+  dwcMeasurementOrFactPage = httr::GET("http://tools.gbif.org/dwca-validator/extension.do?id=http://rs.iobis.org/obis/terms/ExtendedMeasurementOrFact")
   assign(
     'dwcMeasurementOrFactTerms',
-    gsub('\n|\t| ', '', xml_text(xml_find_all(x=read_html(dwcMeasurementOrFactPage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
-    envir = parent.env(environment())
+    gsub('\n|\t| ', '', xml2::xml_text(xml2::xml_find_all(x=xml2::read_html(dwcMeasurementOrFactPage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
+    envir = .GlobalEnv
   )
-  
-  dwcOccurrencePage = GET("http://tools.gbif.org/dwca-validator/extension.do?id=dwc:Occurrence")
+
+  dwcOccurrencePage = httr::GET("http://tools.gbif.org/dwca-validator/extension.do?id=dwc:Occurrence")
   assign(
     'dwcOccurrenceTerms',
-    gsub('\n|\t| ', '', xml_text(xml_find_all(x=read_html(dwcOccurrencePage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
-    envir = parent.env(environment())
+    gsub('\n|\t| ', '', xml2::xml_text(xml_find_all(x=read_html(dwcOccurrencePage), xpath='//div[@class="definition"]//div[@class="title"]//div[@class="head"]'))),
+    envir = .GlobalEnv
   )
 }
 
@@ -80,9 +128,9 @@ loadDwCTerms = function () {
 
 rnSubset = function (dt, wanted, mapped) {
   dt = dt[, .SD, .SDcols = wanted]
-  
+
   ## map column names to dwc vocab (just do your best)
-  setnames(dt, 
+  setnames(dt,
            old=wanted,
            new=mapped
   )
@@ -91,21 +139,21 @@ rnSubset = function (dt, wanted, mapped) {
 
 
 getDwCTable = function (dt_name, vocab, ext='o', ...) {
-  
+
   argg <- c(as.list(environment()), list(...))
-  
+
   if (!is.character(dt_name)) {
     dt_name = deparse(substitute(dt_name))
   }
-  
+
   if (exists(dt_name)) {
     dt_orig = get(dt_name)
-    
+
   }
   else {
     dt_orig = NULL
   }
-  
+
   if (!is.null(dt_orig) & is.data.table(dt_orig)) {
     dt = copy(get(dt_name))
   }
@@ -115,9 +163,9 @@ getDwCTable = function (dt_name, vocab, ext='o', ...) {
   else {
     dt = data.table('dummy' = NA_character_)
   }
-  
+
   dtnames = names(dt)
-  
+
   if (ext == 'o') {
     sapply(vocab, FUN = function (n) {
       if ((n %in% dtnames) == F) {
@@ -141,7 +189,7 @@ getDwCTable = function (dt_name, vocab, ext='o', ...) {
         }
       }
     })
-    
+
     dt = dt[, .SD, .SDcols = intersect(colnames(dt), vocab)]
   }
   else {
@@ -157,16 +205,16 @@ getDwCTable = function (dt_name, vocab, ext='o', ...) {
       }
     })
     dt = dt[, .SD, .SDcols = intersect(colnames(dt), vocab)]
-    
+
   }
-  
+
   if ('dummy' %in% dtnames) {
     dt[, .SD, .SDcols=-c('dummy')]
   }
   else {
     dt
   }
-  
+
 }
 
 
@@ -193,38 +241,38 @@ getMeasVars = function (dt) {
 }
 
 createUUID = function (dt_orig, typeLevel, cols) {
-  
+
   uuid_colname = paste0(typeLevel, '_uuid')
-  
+
   print(cols)
   dt = copy(dt_orig)
   dt[, 'md5'] = apply(as.matrix(dt[, .SD, .SDcols=cols]), MARGIN = 1, digest, algo='md5')
   print(nrow(dt))
-  
+
   if (uuid_colname %in% colnames(dt)) {
     dt_idmap = unique(dt[complete.cases(dt[, .SD, .SD=c('md5', uuid_colname)]), .SD, .SD=c('md5', uuid_colname)])
     #should check if one md5 map to multiple uuid
     print(dt_idmap)
     setkey(dt_idmap, 'md5')
   }
-  
+
   dt_type_lvl = unique(dt[, .SD, .SDcols=c(cols, 'md5')])
-  
+
   dt_type_lvl[, uuid_colname] = sapply(X = rep(NA, times=nrow(dt_type_lvl)), UUIDgenerate)
   print(nrow(dt_type_lvl))
-  
+
   setkey(dt, 'md5')
   setkey(dt_type_lvl, 'md5')
-  
+
   dt_uuided = dt_type_lvl[, .SD, .SDcols=c('md5', uuid_colname)][dt]
   if (uuid_colname %in% colnames(dt)) {
     dt_uuided = dt_uuided[, .SD, .SDcols=-paste0('i.', uuid_colname)]
     dt_uuided = dt_idmap[dt_uuided]
     dt_uuided = dt_uuided[, .SD, .SDcols=-paste0('i.', uuid_colname)]
   }
-  
+
   dt_uuided[, .SD, .SDcols=-"md5"]
-  
+
 }
 
 #rktw[3, 'fbGroupSetup_uuid'] = NA
@@ -233,9 +281,9 @@ createUUID = function (dt_orig, typeLevel, cols) {
 
 makeMeasurementTpl = function (dt_orig, measVars = NA, ...) {
   dt = copy(dt_orig)
-  
+
   eventSpecialVarPattern = getSpecialVarPattern()
-  
+
   meas_meta_suffix = c(
     'DetBy',
     'MeasUnit',
@@ -244,7 +292,7 @@ makeMeasurementTpl = function (dt_orig, measVars = NA, ...) {
     'MeasMethod',
     'MeasRemarks'
   )
-  
+
   meas_meta_full = c(
     'measurementDeterminedBy',
     'measurementUnit',
@@ -253,23 +301,23 @@ makeMeasurementTpl = function (dt_orig, measVars = NA, ...) {
     'measurementMethod',
     'measurementRemarks'
   )
-  
+
   idVars = getIDVars(dt)
-  
+
   dt_nrow = nrow(dt)
-  
+
   if (is.na(measVars)) {
     measVars = setdiff(colnames(dt), idVars)
   }
-  
+
   dt.molten = melt.data.table (
-    dt, 
+    dt,
     id.vars = idVars,
     measure.vars = measVars,
     variable.name = "measurementType",
     value.name = "measurementValue"
   )
-  
+
   meas_vars = unique(dt.molten$measurementType)
   tpl = copy(dt)
   meas_meta_var_colname = as.matrix(sapply(meas_vars, function(mv){
@@ -277,18 +325,18 @@ makeMeasurementTpl = function (dt_orig, measVars = NA, ...) {
     tpl.list = setNames(as.list(rep(NA, times=length(meas_meta_full))), meas_meta_full)
     assign(x = 'tpl', value = data.frame(append(tpl, tpl.list, after=match(mv, names(tpl)))), envir = parent.env(environment()))
   }))
-  
+
   tpl
-  
+
 }
 
 makeMeasurement = function (dt_orig, measVars = NA, ...) {
-  
+
   argg <- c(as.list(environment()), list(...))
   dt = copy(dt_orig)
-  
+
   eventSpecialVarPattern = getSpecialVarPattern()
-  
+
   meas_meta_suffix = c(
     'DetBy',
     'MeasUnit',
@@ -297,7 +345,7 @@ makeMeasurement = function (dt_orig, measVars = NA, ...) {
     'MeasMethod',
     'MeasRemarks'
   )
-  
+
   meas_meta_full = c(
     'measurementDeterminedBy',
     'measurementUnit',
@@ -306,7 +354,7 @@ makeMeasurement = function (dt_orig, measVars = NA, ...) {
     'measurementMethod',
     'measurementRemarks'
   )
-  
+
   idVars = getIDVars(dt)
   #append(
   #    intersect(
@@ -315,34 +363,34 @@ makeMeasurement = function (dt_orig, measVars = NA, ...) {
   #    ),
   #    grep(colnames(dt), pattern = eventSpecialVarPattern, value = T)
   #)
-  
+
   dt_nrow = nrow(dt)
-  
+
   if (is.na(measVars)) {
     measVars = setdiff(colnames(dt), idVars)
   }
-  
+
   dt = melt.data.table (
-    dt, 
+    dt,
     id.vars = idVars,
     measure.vars = measVars,
     variable.name = "measurementType",
     value.name = "measurementValue"
   )
-  
+
   #invisible(dt[, detBy:=paste0(measurementType, "DetBy")][, measUnit:=paste0(measurementType, "MeasUnit")])
-  
-  
+
+
   #print(unique(dt$detBy))
   dtnames = colnames(dt)
-  
+
   meas_vars = unique(dt$measurementType)
   meas_meta_var_colname = as.matrix(sapply(meas_vars, function(mv){
     paste0(mv, meas_meta_suffix)
   }))
   #print(meas_meta_var_colname)
-  
-  
+
+
   qq = apply(meas_meta_var_colname, MARGIN = 1, function(tpl) {
     #print(tpl)
     meta = sapply(tpl, function(metaVar) {
@@ -359,12 +407,12 @@ makeMeasurement = function (dt_orig, measVars = NA, ...) {
   qq = as.data.table(qq)
   colnames(qq) <- meas_meta_full
   dt = cbind(dt, qq)
-  
+
   meas = dt[, .SD, .SDcols = intersect(dwcMeasurementOrFactTerms, colnames(dt))]
   meas[, measurementIDMaterial := paste0('meas_',make.names(measurementType))]
-  
+
   meas_names = colnames(meas)
-  
+
   sapply(dwcMeasurementOrFactTerms, FUN = function (n) {
     if ((n %in% meas_names) == F) {
       if (!is.null(argg[n][[1]])) {
@@ -379,9 +427,9 @@ makeMeasurement = function (dt_orig, measVars = NA, ...) {
         meas[, eval(n) := dt[, argg[n][[1]], with=F]]
       }
     }
-  })        
-  
+  })
+
   # meas[, 'measurementID'] = sapply(X = rep(NA, times=nrow(meas)), UUIDgenerate)
   meas
-  
+
 }
